@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	neturl "net/url"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -185,13 +186,46 @@ func (s *Scanner) InputCommand(ctx context.Context, command string, argv []strin
 	return utils.InitMcpClient(ctx, s.client)
 }
 
-func (s *Scanner) InputUrl(ctx context.Context, url string) (*mcp.InitializeResult, error) {
+// InputUrl initializes an MCP client from a remote HTTP/SSE MCP server URL.
+// It supports two ways to provide authentication:
+// 1) Explicit HTTP headers (e.g. Authorization) passed in headers map
+// 2) Backwards-compatible: token query parameter in URL (?token=xxx) will be
+//    converted into an Authorization: Bearer xxx header.
+func (s *Scanner) InputUrl(ctx context.Context, url string, headers map[string]string) (*mcp.InitializeResult, error) {
 	dirs := []string{"", "/mcp", "/sse"}
 	url = strings.TrimRight(url, "/")
+
+	// Prepare auth headers
+	authHeaders := make(map[string]string)
+	for k, v := range headers {
+		authHeaders[k] = v
+	}
+
+	// If caller didn't explicitly set Authorization, but URL carries ?token=xxx,
+	// convert it into an Authorization: Bearer xxx header for better MCP compatibility.
+	if _, ok := authHeaders["Authorization"]; !ok {
+		if u, err := neturl.Parse(url); err == nil {
+			q := u.Query()
+			token := q.Get("token")
+			if token != "" {
+				authHeaders["Authorization"] = "Bearer " + token
+				q.Del("token")
+				u.RawQuery = q.Encode()
+				url = u.String()
+			}
+		}
+	}
+
+	// Use nil when there are no headers to avoid unnecessary option allocation downstream
+	var headerMap map[string]string
+	if len(authHeaders) > 0 {
+		headerMap = authHeaders
+	}
+
 	scan := func(ctx context.Context, url string) (*mcp.InitializeResult, error) {
-		r, err := s.InputStreamLink(ctx, url)
+		r, err := s.InputStreamLink(ctx, url, headerMap)
 		if err != nil {
-			r, err = s.InputSSELink(ctx, url)
+			r, err = s.InputSSELink(ctx, url, headerMap)
 			if err != nil {
 				return nil, err
 			}
@@ -209,9 +243,20 @@ func (s *Scanner) InputUrl(ctx context.Context, url string) (*mcp.InitializeResu
 	return nil, err
 }
 
-func (s *Scanner) InputSSELink(ctx context.Context, link string) (*mcp.InitializeResult, error) {
-	opt := client.WithHTTPClient(&http.Client{Timeout: 10 * time.Second})
-	mcpClient, err := client.NewSSEMCPClient(link, opt)
+func (s *Scanner) InputSSELink(ctx context.Context, link string, headers map[string]string) (*mcp.InitializeResult, error) {
+	var mcpClient *client.Client
+	var err error
+	if len(headers) == 0 {
+		// No extra headers
+		mcpClient, err = client.NewSSEMCPClient(link, client.WithHTTPClient(&http.Client{Timeout: 10*time.Second}))
+	} else {
+		// Attach custom headers such as Authorization
+		mcpClient, err = client.NewSSEMCPClient(
+			link,
+			transport.WithHeaders(headers),
+			client.WithHTTPClient(&http.Client{Timeout: 10*time.Second}),
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -223,8 +268,18 @@ func (s *Scanner) InputSSELink(ctx context.Context, link string) (*mcp.Initializ
 	return r, err
 }
 
-func (s *Scanner) InputStreamLink(ctx context.Context, link string) (*mcp.InitializeResult, error) {
-	mcpClient, err := client.NewStreamableHttpClient(link, transport.WithHTTPTimeout(10*time.Second))
+func (s *Scanner) InputStreamLink(ctx context.Context, link string, headers map[string]string) (*mcp.InitializeResult, error) {
+	var mcpClient *client.Client
+	var err error
+	if len(headers) == 0 {
+		mcpClient, err = client.NewStreamableHttpClient(link, transport.WithHTTPTimeout(10*time.Second))
+	} else {
+		mcpClient, err = client.NewStreamableHttpClient(
+			link,
+			transport.WithHTTPTimeout(10*time.Second),
+			transport.WithHTTPHeaders(headers),
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

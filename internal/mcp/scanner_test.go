@@ -102,7 +102,7 @@ func TestMcpTools(t *testing.T) {
 	// 创建扫描器
 	scanner := NewScanner(aiModel, gologger.NewLogger())
 	ctx := context.Background()
-	r, err := scanner.InputSSELink(ctx, ".")
+	r, err := scanner.InputSSELink(ctx, ".", nil)
 	assert.NoError(t, err)
 	issues, err := scanner.ScanLink(ctx, r, false)
 	assert.NoError(t, err)
@@ -114,7 +114,7 @@ func TestMcpTools2(t *testing.T) {
 	// 创建扫描器
 	scanner := NewScanner(aiModel, gologger.NewLogger())
 	ctx := context.Background()
-	r, err := scanner.InputStreamLink(ctx, ".")
+	r, err := scanner.InputStreamLink(ctx, ".", nil)
 	assert.NoError(t, err)
 	t.Log(r)
 	tools, err := utils.ListMcpTools(ctx, scanner.client)

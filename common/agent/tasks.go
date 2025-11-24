@@ -423,8 +423,9 @@ type ScanMcpRequest struct {
 		Token   string `json:"token"`
 		BaseUrl string `json:"base_url"`
 	} `json:"model"`
-	Quick   bool     `json:"quick"`
-	Plugins []string `json:"plugins,omitempty"`
+	Quick   bool              `json:"quick"`
+	Plugins []string          `json:"plugins,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"` // Optional HTTP headers for remote MCP server (e.g. Authorization)
 }
 
 type McpScanAgent struct {
@@ -448,6 +449,7 @@ func (m *McpScanAgent) Execute(ctx context.Context, request TaskRequest, callbac
 	} else {
 		transport = "url"
 	}
+
 	quickMode := params.Quick
 	var target string
 	language := request.Language
@@ -731,7 +733,7 @@ func (m *McpScanAgent) Execute(ctx context.Context, request TaskRequest, callbac
 		}
 		callbacks.StepStatusUpdateCallback(step02, uuid.NewString(), AgentStatusCompleted, texts.aigStartScan, fmt.Sprintf(texts.startScanUrl, url))
 		target = url
-		r, err := scanner.InputUrl(ctx, url)
+		r, err := scanner.InputUrl(ctx, url, params.Headers)
 		if err != nil || r == nil {
 			return fmt.Errorf(texts.inputUrlFailed, err)
 		}

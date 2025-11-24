@@ -41,9 +41,10 @@ type MCPTaskRequest struct {
 		Token   string `json:"token" binding:"required" example:"sk-xxx"`              // API密钥 - 必需
 		BaseUrl string `json:"base_url,omitempty" example:"https://api.openai.com/v1"` // 基础URL - 可选
 	} `json:"model" binding:"required"` // 模型配置 - 必需
-	Thread      int    `json:"thread,omitempty" example:"4"`              // 并发线程数
-	Language    string `json:"language,omitempty" example:"zh"`           // 语言代码 - 可选
-	Attachments string `json:"attachments,omitempty" example:"file1.zip"` // 附件文件路径
+	Thread      int               `json:"thread,omitempty" example:"4"`                                     // 并发线程数
+	Language    string            `json:"language,omitempty" example:"zh"`                                  // 语言代码 - 可选
+	Attachments string            `json:"attachments,omitempty" example:"file1.zip"`                        // 附件文件路径
+	Headers     map[string]string `json:"headers,omitempty" example:"{\"Authorization\":\"Bearer token\"}"` // 远程 MCP Server 自定义 HTTP 头（例如 Authorization）
 }
 
 // AIInfraScanTaskRequest AI基础设施扫描任务请求结构体
@@ -102,7 +103,7 @@ type TaskCreateResponse struct {
 //      {
 //        "type": "mcp_scan",
 //        "content": {
-//          "content": "任务描述",              // 可选: 任务内容描述
+//          "content": "任务描述",              // 可选: 任务内容描述（例如远程 MCP 服务 URL）
 //          "model": {
 //            "model": "gpt-4",               // 必需: 模型名称
 //            "token": "sk-xxx",             // 必需: API密钥
@@ -110,7 +111,10 @@ type TaskCreateResponse struct {
 //          },
 //          "thread": 4,                     // 可选: 并发线程数
 //          "language": "zh",             // 可选: 语言代码
-//          "attachments": "file.zip"       // 可选: 附件文件路径
+//          "attachments": "file.zip",      // 可选: 附件文件路径
+//          "headers": {                    // 可选: 远程 MCP Server HTTP 头（例如 Authorization）
+//            "Authorization": "Bearer your-token"
+//          }
 //        }
 //      }
 //
@@ -266,6 +270,10 @@ func SubmitTask(c *gin.Context, tm *TaskManager) {
 			"plugins": []string{
 				"auth_bypass", "cmd_injection", "credential_theft", "hardcoded_api_key", "indirect_prompt_injection", "name_confusion", "rug_pull", "tool_poisoning", "tool_shadowing",
 			},
+		}
+		if len(req.Headers) > 0 {
+			// 传递给 Agent，由 MCP 扫描器用于连接远程 MCP Server（例如设置 Authorization 头）
+			params["headers"] = req.Headers
 		}
 		var attachments []string
 		if req.Attachments != "" {
